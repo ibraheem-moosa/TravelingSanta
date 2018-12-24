@@ -6,6 +6,24 @@
 #include <assert.h>
 
 #define N 197770 
+#define GRID_LEN 64
+#define MAXX 5100
+#define MAXY 3400
+
+struct pos
+{
+    int i;
+    int j;
+};
+
+struct pos get_pos_from_xy(double x, double y)
+{
+    struct pos ret;
+    ret.i = (int)floor(x / MAXX);
+    ret.j = (int)floor(y / MAXY);
+    return ret;
+}
+
 
 int get_all_primes(int below, int** out)
 {
@@ -94,6 +112,79 @@ double dist_between_id(int id1, int id2)
 }
 
 
+struct bucket_node
+{
+    int id;
+    struct bucket_node* next;
+};
+
+struct bucket_node* init_bucket_node(int id)
+{
+    struct bucket_node* ret = malloc(sizeof(struct bucket_node));
+    ret->id = id;
+    ret->next = NULL;
+    return ret;
+}
+
+void prepend_bucket_node(struct bucket_node* bn, struct bucket_node* before)
+{
+    bn->next = before;
+}
+
+void delete_bucket_node(struct bucket_node* bn)
+{
+    if(bn) {
+        delete_bucket_node(bn->next);
+        free(bn);
+    }
+}
+
+struct bucket_grid_2d
+{
+    int grid_len;
+    struct bucket_node** buckets;
+};
+
+struct bucket_grid_2d init_bucket_grid_2d(int grid_len)
+{
+    struct bucket_grid_2d ret;
+    ret.grid_len = grid_len;
+    ret.buckets = calloc(grid_len * grid_len, sizeof(struct bucket_node*));
+    return ret;
+}
+
+struct bucket_node* get_at_bucket_grid_2d(struct bucket_grid_2d bg, int i, int j)
+{
+    int pos = bg.grid_len * i + j;
+    return bg.buckets[pos];
+}
+
+void insert_at_bucket_grid_2d(struct bucket_grid_2d bg, int i, int j, int id)
+{
+    int pos = bg.grid_len * i + j;
+    struct bucket_node* bn = init_bucket_node(id);
+    struct bucket_node* before = bg.buckets[pos];
+    if(before) {
+        prepend_bucket_node(bn, before);
+    }
+    bg.buckets[pos] = bn;
+}
+
+void delete_bucket_grid_2d(struct bucket_grid_2d bg)
+{
+    int n = bg.grid_len;
+    for(int i = 0; i < n; i++)
+    {
+        for(int j = 0; j < n; j++)
+        {
+            struct bucket_node* bn = get_at_bucket_grid_2d(bg, i, j);
+            delete_bucket_node(bn);
+        }
+    }
+}
+
+static struct bucket_grid_2d bucket_grid;
+
 struct solution
 {
     int n;
@@ -101,6 +192,7 @@ struct solution
 };
 
 int mutate_h3_solution(struct solution sol, int extent);
+
 struct solution generate_solution(const int* ids, int n)
 {
     struct solution ret;
@@ -108,8 +200,8 @@ struct solution generate_solution(const int* ids, int n)
     ret.ids = malloc(n * sizeof(int));
     memcpy(ret.ids, ids, n * sizeof(int));
     random_permutattion(ret.ids + 1, n - 2);
-    int max_step = 10000;
-    while(max_step--) mutate_h3_solution(ret, 100);
+    //int max_step = 10000;
+    //while(max_step--) mutate_h3_solution(ret, 100);
     return ret;
 }
 
@@ -192,6 +284,11 @@ int mutate_h3_solution(struct solution sol, int extent)
     }
 
     return ret;
+}
+
+void mutate_h4_solution(struct solution sol)
+{
+
 }
 
 void multiple_mutate_solution(struct solution sol, int num)
@@ -317,9 +414,18 @@ int main(int argc, char* argv[])
     load_cities(argv[1]);
     int* primes;
     int prime_count = get_all_primes(N, &primes);
-    printf("%d\n", prime_count);
     //int n = prime_count + 2;
     int n = N;
+    printf("n = %d\n", n);
+    int bucket_grid_len = GRID_LEN;
+    bucket_grid = init_bucket_grid_2d(bucket_grid_len);
+    for(int i = 0; i < n; i++)
+    {
+        struct pos ij = get_pos_from_xy(cities[i].x, cities[i].y);
+        insert_at_bucket_grid_2d(bucket_grid, ij.i, ij.j, cities[i].id);
+    }
+    puts("Bucket grid creation done");
+
     struct solution template_solution;
     template_solution.n = n;
     template_solution.ids = malloc(n * sizeof(int));
@@ -330,9 +436,10 @@ int main(int argc, char* argv[])
         //template_solution.ids[i] = primes[i - 1];
         template_solution.ids[i] = i;
     }
-    struct solution result = steepest_ascent_hc(1000, 1000LL, 1000, -0.01, 20, template_solution);
+    struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
     delete_solution(template_solution);
     delete_solution(result);
+    delete_bucket_grid_2d(bucket_grid);
     free(primes);
     return 0;
 }
