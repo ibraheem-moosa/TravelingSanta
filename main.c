@@ -6,9 +6,10 @@
 #include <assert.h>
 
 #define N 197770 
-#define GRID_LEN 128
+#define GRID_LEN 64
 #define MAXX 5100
 #define MAXY 3400
+#define MAX_DIST 7000
 
 struct pos
 {
@@ -19,12 +20,11 @@ struct pos
 int da_x[] = { 0, -1, -1, 0, 1, 1, -1,  1};
 int da_y[] = {-1, -1,  0, 1, 1, 0,  1, -1};
 
-struct pos* get_chebyshev_neighbors(struct pos ij, int mx, int my, int* n)
+void get_chebyshev_neighbors(struct pos ij, int mx, int my, int* n, struct pos* ret)
 {
     int i = ij.i;
     int j = ij.j;
     *n = 8;
-    struct pos* ret = malloc(sizeof(*n) * sizeof(struct pos));
     int ci = 0;
     for(int k = 0; k < 8; k++)
     {
@@ -36,9 +36,7 @@ struct pos* get_chebyshev_neighbors(struct pos ij, int mx, int my, int* n)
         ret[ci].j = dj;
         ci++;
     }
-    ret = realloc(ret, ci * sizeof(struct pos));
     *n = ci;
-    return ret;
 }
 
 struct pos get_pos_from_xy(double x, double y)
@@ -246,8 +244,9 @@ int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char p
 {
     struct pos ij = get_pos_from_xy(cities[id].x, cities[id].y);
     int num_neighbors;
-    struct pos* neighbors = get_chebyshev_neighbors(ij, MAXX, MAXY, &num_neighbors);
-    double min_dist = sqrt(MAXX * MAXX + MAXY * MAXY);
+    struct pos neighbors[8];
+    get_chebyshev_neighbors(ij, MAXX, MAXY, &num_neighbors, neighbors);
+    double min_dist = MAX_DIST;
     int min_id = 0;
     int ci = 0;
     do 
@@ -273,7 +272,6 @@ int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char p
         ci++;
         if(ci == num_neighbors) break;
     } while(1);
-    free(neighbors);
     return min_id;
 }
 
@@ -306,11 +304,58 @@ struct solution nearest_neighbor_solution(const int* ids, int n)
        assert(next_id != 0);
        visited[next_id] = 1;
        ret.ids[i] = next_id;
-       if(i % 100 == 0) printf("%lf\n", (double)i / n);
+       if(i % 10000 == 0) printf("%lf\n", (double)i / n);
     }
     printf("Last Edge Cost: %lf\n", dist_between_id(ret.ids[n-1], ret.ids[n-2]));
     return ret;
 }
+
+struct solution nearest_neighbor_dual_approach_solution(const int* ids, int n)
+{
+    //delete_bucket_grid_2d(bucket_grid);
+    //int bucket_grid_len = GRID_LEN;
+    //struct bucket_grid_2d bucket_grid = init_bucket_grid_2d(bucket_grid_len);
+    for(int j = 0; j < n; j++)
+    {
+        int i = ids[j];
+        struct pos ij = get_pos_from_xy(cities[i].x, cities[i].y);
+        insert_at_bucket_grid_2d(bucket_grid, ij.i, ij.j, cities[i].id);
+    }
+    struct solution ret;
+    ret.n = n;
+    ret.ids = malloc(n * sizeof(int));
+    ret.ids[0] = 0;
+    ret.ids[n-1] = 0;
+    int max_id = 0;
+    for(int i = 0; i < n; i++)
+    {
+        if(ids[i] > max_id) max_id = ids[i];
+    }
+    char* visited = calloc(max_id + 1, 1);
+    visited[0] = 1;
+    int i, j;
+    i = 1;
+    j = n - 2;
+    while(i <= j)
+    {
+       int next_id = get_nearest_neighbor(ret.ids[i - 1], visited, bucket_grid, i % 10 == 0);
+       assert(next_id != 0);
+       visited[next_id] = 1;
+       ret.ids[i] = next_id;
+       if(i == j) break;
+       next_id = get_nearest_neighbor(ret.ids[j + 1], visited, bucket_grid, (j + 1) % 10 == 0);
+       assert(next_id != 0);
+       visited[next_id] = 1;
+       ret.ids[j] = next_id;
+
+       if(i % 10000 == 0) printf("%lf\n", (i * 2.0)/ n);
+       i++;
+       j--;
+    }
+    printf("Last Edge Cost: %lf\n", dist_between_id(ret.ids[n-1], ret.ids[n-2]));
+    return ret;
+}
+
 
 int mutate_h3_solution(struct solution sol, int extent);
 double eval_solution(struct solution sol);
@@ -561,7 +606,8 @@ int main(int argc, char* argv[])
         //template_solution.ids[i] = primes[i - 1];
         template_solution.ids[i] = i;
     }
-    struct solution result = nearest_neighbor_solution(template_solution.ids, n);
+    //struct solution result = nearest_neighbor_solution(template_solution.ids, n);
+    struct solution result = nearest_neighbor_dual_approach_solution(template_solution.ids, n);
     //struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
     puts("Done with nearest neighbor");
     double cost = eval_solution(result);
