@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #define N 197770 
-#define GRID_LEN 64
+#define GRID_LEN 128
 #define MAXX 5100
 #define MAXY 3400
 
@@ -16,6 +16,31 @@ struct pos
     int j;
 };
 
+int da_x[] = { 0, -1, -1, 0, 1, 1, -1,  1};
+int da_y[] = {-1, -1,  0, 1, 1, 0,  1, -1};
+
+struct pos* get_chebyshev_neighbors(struct pos ij, int mx, int my, int* n)
+{
+    int i = ij.i;
+    int j = ij.j;
+    *n = 8;
+    struct pos* ret = malloc(sizeof(*n) * sizeof(struct pos));
+    int ci = 0;
+    for(int k = 0; k < 8; k++)
+    {
+        int di = i + da_x[k];
+        int dj = j + da_y[k];
+        if(di < 0 || di > mx) continue;
+        if(dj < 0 || dj > my) continue;
+        ret[ci].i = di;
+        ret[ci].j = dj;
+        ci++;
+    }
+    ret = realloc(ret, ci * sizeof(struct pos));
+    *n = ci;
+    return ret;
+}
+
 struct pos get_pos_from_xy(double x, double y)
 {
     struct pos ret;
@@ -24,32 +49,32 @@ struct pos get_pos_from_xy(double x, double y)
     return ret;
 }
 
+static char is_prime[N];
 
 int get_all_primes(int below, int** out)
 {
-    int* ret = calloc(below, sizeof(int));
-    // ret[p] == 0 means p is a prime
-    if (ret == NULL)
-        return -1;
-    ret[0] = 1;
-    ret[1] = 1;
+    int prime_count = 0;
+    for(int i = 0; i < below; i++) is_prime[i] = 1;
+    is_prime[0] = 0;
+    is_prime[1] = 0;
     for(int i = 2; i < below; i++)
     {
-        if(!ret[i])
+        if(is_prime[i])
         {
+            prime_count++;
             for(int q = 2 * i; q < below; q += i)
-                ret[q] = 1;
+                is_prime[q] = 0;
         }
     }
+    int* ret = malloc(prime_count * sizeof(int));
     int current_prime_index = 0;
     for(int i = 0; i < below; i++)
     {
-        if(!ret[i])
+        if(is_prime[i])
             ret[current_prime_index++] = i;
     }
-    ret = realloc(ret, current_prime_index * sizeof(int));
     *out = ret;
-    return current_prime_index;
+    return prime_count;
 }
 
 void random_permutattion(int* array, int n)
@@ -170,6 +195,31 @@ void insert_at_bucket_grid_2d(struct bucket_grid_2d bg, int i, int j, int id)
     bg.buckets[pos] = bn;
 }
 
+void remove_from_bucket_grid_2d(struct bucket_grid_2d bg, int i, int j, int id)
+{
+    int pos = bg.grid_len * i + j;
+    struct bucket_node* bn = bg.buckets[pos];
+    if(bn->id == id)
+    {
+        bg.buckets[pos] = bn->next;
+        free(bn);
+        return;
+    }
+    struct bucket_node* prev = bn;
+    bn = bn->next;
+    while(bn)
+    {
+        if(bn->id == id)
+        {
+            prev->next = bn->next;
+            free(bn);
+            break;
+        }
+        prev = bn;
+        bn = bn->next;
+    }
+}
+
 void delete_bucket_grid_2d(struct bucket_grid_2d bg)
 {
     int n = bg.grid_len;
@@ -191,17 +241,91 @@ struct solution
     int* ids;
 };
 
-int mutate_h3_solution(struct solution sol, int extent);
 
-struct solution generate_solution(const int* ids, int n)
+int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char prime_preferred)
 {
+    struct pos ij = get_pos_from_xy(cities[id].x, cities[id].y);
+    int num_neighbors;
+    struct pos* neighbors = get_chebyshev_neighbors(ij, MAXX, MAXY, &num_neighbors);
+    double min_dist = sqrt(MAXX * MAXX + MAXY * MAXY);
+    int min_id = 0;
+    int ci = 0;
+    do 
+    {
+        struct bucket_node* bn = get_at_bucket_grid_2d(bg, ij.i, ij.j);
+        while(bn)
+        {
+            if(!visited[bn->id])
+            {
+                double dist = dist_between_id(id, bn->id);
+                if(prime_preferred && !is_prime[bn->id])
+                    dist *= 1.1;
+                if (min_dist > dist)
+                {
+                    min_dist = dist;
+                    min_id = bn->id;
+                }
+            }
+            bn = bn->next;
+            
+        }
+        ij = neighbors[ci];
+        ci++;
+        if(ci == num_neighbors) break;
+    } while(1);
+    free(neighbors);
+    return min_id;
+}
+
+struct solution nearest_neighbor_solution(const int* ids, int n)
+{
+    //delete_bucket_grid_2d(bucket_grid);
+    //int bucket_grid_len = GRID_LEN;
+    //struct bucket_grid_2d bucket_grid = init_bucket_grid_2d(bucket_grid_len);
+    for(int j = 0; j < n; j++)
+    {
+        int i = ids[j];
+        struct pos ij = get_pos_from_xy(cities[i].x, cities[i].y);
+        insert_at_bucket_grid_2d(bucket_grid, ij.i, ij.j, cities[i].id);
+    }
     struct solution ret;
     ret.n = n;
     ret.ids = malloc(n * sizeof(int));
-    memcpy(ret.ids, ids, n * sizeof(int));
-    random_permutattion(ret.ids + 1, n - 2);
+    ret.ids[0] = 0;
+    ret.ids[n-1] = 0;
+    int max_id = 0;
+    for(int i = 0; i < n; i++)
+    {
+        if(ids[i] > max_id) max_id = ids[i];
+    }
+    char* visited = calloc(max_id + 1, 1);
+    visited[0] = 1;
+    for(int i = 1; i < n - 1; i++)
+    {
+       int next_id = get_nearest_neighbor(ret.ids[i - 1], visited, bucket_grid, i % 10 == 0);
+       assert(next_id != 0);
+       visited[next_id] = 1;
+       ret.ids[i] = next_id;
+       if(i % 100 == 0) printf("%lf\n", (double)i / n);
+    }
+    printf("Last Edge Cost: %lf\n", dist_between_id(ret.ids[n-1], ret.ids[n-2]));
+    return ret;
+}
+
+int mutate_h3_solution(struct solution sol, int extent);
+double eval_solution(struct solution sol);
+struct solution generate_solution(const int* ids, int n)
+{
+    struct solution ret;
+    //ret.n = n;
+    //ret.ids = malloc(n * sizeof(int));
+    //memcpy(ret.ids, ids, n * sizeof(int));
+    //random_permutattion(ret.ids + 1, n - 2);
     //int max_step = 10000;
     //while(max_step--) mutate_h3_solution(ret, 100);
+    ret = nearest_neighbor_solution(ids, n);
+    double cost = eval_solution(ret);
+    printf("Initial solution cost: %lf\n", cost);
     return ret;
 }
 
@@ -326,6 +450,7 @@ double eval_solution(struct solution sol)
     for(i = 0; i < sol.n - 1; i++)
     {
         double d = dist_between_id(sol.ids[i], sol.ids[i + 1]);
+        if(i + 1 % 10 == 0 && !is_prime[sol.ids[i + 1]]) d *= 1.1;
         cost += d;
     }
     return cost;
@@ -436,10 +561,22 @@ int main(int argc, char* argv[])
         //template_solution.ids[i] = primes[i - 1];
         template_solution.ids[i] = i;
     }
-    struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
+    struct solution result = nearest_neighbor_solution(template_solution.ids, n);
+    //struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
+    puts("Done with nearest neighbor");
+    double cost = eval_solution(result);
+    printf("Cost: %lf\n", cost);
+    FILE* f = fopen("result.csv", "w");
+    fprintf(f, "Path\n");
+    for(int i = 0; i < n; i++)
+    {
+        fprintf(f, "%d\n", result.ids[i]);
+    }
+    fclose(f);
     delete_solution(template_solution);
     delete_solution(result);
     delete_bucket_grid_2d(bucket_grid);
     free(primes);
+
     return 0;
 }
