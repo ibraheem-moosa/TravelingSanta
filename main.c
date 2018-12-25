@@ -6,10 +6,11 @@
 #include <assert.h>
 
 #define N 197770 
-#define GRID_LEN 64
+#define GRID_LEN 128
 #define MAXX 5100
 #define MAXY 3400
 #define MAX_DIST 7000
+#define STARTING_POS 121572
 
 struct pos
 {
@@ -239,6 +240,29 @@ struct solution
     int* ids;
 };
 
+struct solution load_solution(char* fname, int n)
+{
+    struct solution ret;
+    ret.n = n;
+    ret.ids = malloc(n * sizeof(int));
+    FILE* f = fopen(fname, "r");
+    char* buf = NULL;
+    size_t buf_len = 0;
+    int current_index = 0;
+    //ignore first line
+    getline(&buf, &buf_len, f);
+    while(1)
+    {
+        ssize_t read_count = 
+            getline(&buf, &buf_len, f);
+        if(read_count == -1)
+            break;
+        sscanf(buf, "%d", &ret.ids[current_index]);
+    }
+    free(buf);
+    fclose(f);
+}
+
 
 int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char prime_preferred)
 {
@@ -266,7 +290,6 @@ int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char p
                 }
             }
             bn = bn->next;
-            
         }
         ij = neighbors[ci];
         ci++;
@@ -275,7 +298,7 @@ int get_nearest_neighbor(int id, char* visited, struct bucket_grid_2d bg, char p
     return min_id;
 }
 
-struct solution nearest_neighbor_solution(const int* ids, int n)
+struct solution nearest_neighbor_solution(const int* ids, int n, int starting_pos)
 {
     //delete_bucket_grid_2d(bucket_grid);
     //int bucket_grid_len = GRID_LEN;
@@ -289,19 +312,19 @@ struct solution nearest_neighbor_solution(const int* ids, int n)
     struct solution ret;
     ret.n = n;
     ret.ids = malloc(n * sizeof(int));
-    ret.ids[0] = 0;
-    ret.ids[n-1] = 0;
+    ret.ids[0] = starting_pos;
+    ret.ids[n-1] = starting_pos;
     int max_id = 0;
     for(int i = 0; i < n; i++)
     {
         if(ids[i] > max_id) max_id = ids[i];
     }
     char* visited = calloc(max_id + 1, 1);
-    visited[0] = 1;
+    visited[starting_pos] = 1;
     for(int i = 1; i < n - 1; i++)
     {
-       int next_id = get_nearest_neighbor(ret.ids[i - 1], visited, bucket_grid, i % 10 == 0);
-       assert(next_id != 0);
+       int next_id = get_nearest_neighbor(ret.ids[i - 1], visited, bucket_grid, 0);//i % 10 == 0);
+       assert(next_id != starting_pos);
        visited[next_id] = 1;
        ret.ids[i] = next_id;
        if(i % 10000 == 0) printf("%lf\n", (double)i / n);
@@ -368,7 +391,7 @@ struct solution generate_solution(const int* ids, int n)
     //random_permutattion(ret.ids + 1, n - 2);
     //int max_step = 10000;
     //while(max_step--) mutate_h3_solution(ret, 100);
-    ret = nearest_neighbor_solution(ids, n);
+    ret = nearest_neighbor_solution(ids, n, STARTING_POS);
     double cost = eval_solution(ret);
     printf("Initial solution cost: %lf\n", cost);
     return ret;
@@ -582,6 +605,9 @@ int main(int argc, char* argv[])
 {
     srand(time(NULL));
     load_cities(argv[1]);
+    int starting_pos;
+    sscanf(argv[3], "%d", &starting_pos);
+    printf("%d\n", starting_pos);
     int* primes;
     int prime_count = get_all_primes(N, &primes);
     //int n = prime_count + 2;
@@ -599,22 +625,35 @@ int main(int argc, char* argv[])
     struct solution template_solution;
     template_solution.n = n;
     template_solution.ids = malloc(n * sizeof(int));
-    template_solution.ids[0] = 0;
-    template_solution.ids[n - 1] = 0;
+    template_solution.ids[0] = STARTING_POS;
+    template_solution.ids[n - 1] = STARTING_POS;
     for(int i = 1; i < n - 1; i++)
     {
         //template_solution.ids[i] = primes[i - 1];
         template_solution.ids[i] = i;
     }
-    //struct solution result = nearest_neighbor_solution(template_solution.ids, n);
-    struct solution result = nearest_neighbor_dual_approach_solution(template_solution.ids, n);
+    struct solution result = nearest_neighbor_solution(template_solution.ids, n, starting_pos);
+    //struct solution result = nearest_neighbor_dual_approach_solution(template_solution.ids, n);
     //struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
     puts("Done with nearest neighbor");
     double cost = eval_solution(result);
     printf("Cost: %lf\n", cost);
-    FILE* f = fopen("result.csv", "w");
+    int pos_of_0 = 0;
+    for(int i = 0; i < result.n; i++)
+    {
+        if(result.ids[i] == 0)
+        {
+            pos_of_0 = i;
+            break;
+        }
+    }
+    FILE* f = fopen(argv[2], "w");
     fprintf(f, "Path\n");
-    for(int i = 0; i < n; i++)
+    for(int i = pos_of_0; i < result.n; i++)
+    {
+        fprintf(f, "%d\n", result.ids[i]);
+    }
+    for(int i = 1; i <= pos_of_0; i++)
     {
         fprintf(f, "%d\n", result.ids[i]);
     }
@@ -623,6 +662,5 @@ int main(int argc, char* argv[])
     delete_solution(result);
     delete_bucket_grid_2d(bucket_grid);
     free(primes);
-
     return 0;
 }
