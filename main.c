@@ -257,10 +257,11 @@ struct solution load_solution(char* fname, int n)
             getline(&buf, &buf_len, f);
         if(read_count == -1)
             break;
-        sscanf(buf, "%d", &ret.ids[current_index]);
+        sscanf(buf, "%d", &ret.ids[current_index++]);
     }
     free(buf);
     fclose(f);
+    return ret;
 }
 
 
@@ -409,21 +410,27 @@ void mutate_solution(struct solution sol)
 
 int mutate_h1_solution(struct solution sol)
 {
-    int max_attempt = sol.n;
     int ret = 0;
-    while(max_attempt--)
+    int i = rand() % (sol.n - 3);
+    int k = 3 + rand() % 500;
+    if(i + k > sol.n) k -= sol.n - i;
+    int a = sol.ids[i];
+    int b = sol.ids[i + 1];
+    int c = sol.ids[i + k - 1];
+    int d = sol.ids[i + k];
+    if(dist_between_id(a, c) + dist_between_id(b, d) < dist_between_id(a, b) + dist_between_id(c, d))
     {
-        int i = rand() % (sol.n - 3);
-        int a = sol.ids[i];
-        int b = sol.ids[i + 1];
-        int c = sol.ids[i + 2];
-        int d = sol.ids[i + 3];
-        if(dist_between_id(a, c) + dist_between_id(b, d) < dist_between_id(a, b) + dist_between_id(c, d))
+        int j = i + k - 1;
+        i++;
+        while(i <= j)
         {
-            sol.ids[i + 1] = c;
-            sol.ids[i + 2] = b;
-            ret = 1;
+            int temp = sol.ids[i];
+            sol.ids[i] = sol.ids[j];
+            sol.ids[j] = temp;
+            i++;
+            j--;
         }
+        ret = 1;
     }
     return ret;
 }
@@ -487,7 +494,7 @@ void multiple_mutate_solution(struct solution sol, int num)
 {
     for(int i = 0; i < num; i++)
     {
-        mutate_solution(sol);
+        mutate_h1_solution(sol);
     }
 }
 
@@ -536,8 +543,10 @@ void assert_solution(struct solution sol)
 struct solution steepest_ascent_hc(int neighbor_count, long long num_iter, int multi_mut, double gamma, int patience, struct solution template_solution)
 {
     int best_sol_index = 0;
-    struct solution best_solution = generate_solution(template_solution.ids, template_solution.n);
+    //struct solution best_solution = generate_solution(template_solution.ids, template_solution.n);
+    struct solution best_solution = copy_solution(template_solution);
     double best_cost = eval_solution(best_solution);
+    printf("Initial cost: %lf\n", best_cost);
     struct solution* sols;
     sols = calloc(neighbor_count, sizeof(struct solution));
     for(int j = 0; j < neighbor_count; j++)
@@ -593,7 +602,7 @@ struct solution steepest_ascent_hc(int neighbor_count, long long num_iter, int m
             inplace_copy_solution(best_solution, sols[best_sol_index]);
             no_improvement = 0;
         }
-        if(i % 10 == 0) printf("Iter: %lld Best Cost: %lf\n", i, best_cost);
+        if(i % 100 == 0) printf("Iter: %lld Best Cost: %lf\n", i, best_cost);
     }
     for(int j = 0; j < neighbor_count; j++)
         delete_solution(sols[j]);
@@ -605,48 +614,48 @@ int main(int argc, char* argv[])
 {
     srand(time(NULL));
     load_cities(argv[1]);
-    int starting_pos;
-    sscanf(argv[3], "%d", &starting_pos);
-    printf("%d\n", starting_pos);
+    //int starting_pos;
+    //sscanf(argv[3], "%d", &starting_pos);
+    //printf("%d\n", starting_pos);
     int* primes;
     int prime_count = get_all_primes(N, &primes);
     //int n = prime_count + 2;
     int n = N;
     printf("n = %d\n", n);
-    int bucket_grid_len = GRID_LEN;
-    bucket_grid = init_bucket_grid_2d(bucket_grid_len);
-    for(int i = 0; i < n; i++)
-    {
-        struct pos ij = get_pos_from_xy(cities[i].x, cities[i].y);
-        insert_at_bucket_grid_2d(bucket_grid, ij.i, ij.j, cities[i].id);
-    }
-    puts("Bucket grid creation done");
+    //int bucket_grid_len = GRID_LEN;
+    //bucket_grid = init_bucket_grid_2d(bucket_grid_len);
+    //for(int i = 0; i < n; i++)
+    //{
+    //    struct pos ij = get_pos_from_xy(cities[i].x, cities[i].y);
+    //    insert_at_bucket_grid_2d(bucket_grid, ij.i, ij.j, cities[i].id);
+    //}
+    //puts("Bucket grid creation done");
 
-    struct solution template_solution;
-    template_solution.n = n;
-    template_solution.ids = malloc(n * sizeof(int));
-    template_solution.ids[0] = STARTING_POS;
-    template_solution.ids[n - 1] = STARTING_POS;
-    for(int i = 1; i < n - 1; i++)
-    {
+    struct solution template_solution = load_solution(argv[3], n);
+    //template_solution.n = n;
+    //template_solution.ids = malloc(n * sizeof(int));
+    //template_solution.ids[0] = STARTING_POS;
+    //template_solution.ids[n - 1] = STARTING_POS;
+    //for(int i = 1; i < n - 1; i++)
+    //{
         //template_solution.ids[i] = primes[i - 1];
-        template_solution.ids[i] = i;
-    }
-    struct solution result = nearest_neighbor_solution(template_solution.ids, n, starting_pos);
+    //    template_solution.ids[i] = i;
+    //}
+    //struct solution result = nearest_neighbor_solution(template_solution.ids, n, starting_pos);
     //struct solution result = nearest_neighbor_dual_approach_solution(template_solution.ids, n);
-    //struct solution result = steepest_ascent_hc(10, 1LL, 1000, -0.01, 20, template_solution);
-    puts("Done with nearest neighbor");
+    struct solution result = steepest_ascent_hc(20, 10000LL, 100000, -0.00001, 500, template_solution);
+    //puts("Done with nearest neighbor");
     double cost = eval_solution(result);
     printf("Cost: %lf\n", cost);
     int pos_of_0 = 0;
-    for(int i = 0; i < result.n; i++)
-    {
-        if(result.ids[i] == 0)
-        {
-            pos_of_0 = i;
-            break;
-        }
-    }
+    //for(int i = 0; i < result.n; i++)
+    //{
+    //    if(result.ids[i] == 0)
+    //    {
+    //        pos_of_0 = i;
+    //        break;
+    //    }
+    //}
     FILE* f = fopen(argv[2], "w");
     fprintf(f, "Path\n");
     for(int i = pos_of_0; i < result.n; i++)
@@ -660,7 +669,7 @@ int main(int argc, char* argv[])
     fclose(f);
     delete_solution(template_solution);
     delete_solution(result);
-    delete_bucket_grid_2d(bucket_grid);
+    //delete_bucket_grid_2d(bucket_grid);
     free(primes);
     return 0;
 }
